@@ -1,9 +1,15 @@
-name: Aston Kernel Build (sam)
+name: AxionOS_Kernel_CI-aston
 
-on: workflow_dispatch: inputs: kernel_branch: description: 'Kernel branch or ref to build (default: main)' required: false default: 'main' toolchain_url: description: 'Optional URL to a prebuilt toolchain tarball (tar.gz)' required: false default: '' compiler: description: 'Choose compiler: clang or gcc (default: clang)' required: false default: 'clang' defconfig: description: 'Defconfig name for aston (example: aston_defconfig). If empty, will try "defconfig" fallback.' required: false default: ''
+on:
+  workflow_dispatch:
 
-jobs: build: name: Build aston kernel runs-on: ubuntu-latest env: KERNEL_REPO: gaurav-paul9/kernel_oneplus_aston_sm8550 ARCH: arm64 O: out steps: - name: Checkout workflow repo uses: actions/checkout@v4 with: # Checkout this repo (if you keep workflow here). We will also fetch the kernel repo separately. fetch-depth: 0
-
+jobs:
+  build:
+    name: Building kernel 
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      
 - name: Checkout kernel (aston) from user repo
     uses: actions/checkout@v4
     with:
