@@ -1,0 +1,172 @@
+name: Aston Kernel Build (sam)
+
+on: workflow_dispatch: inputs: kernel_branch: description: 'Kernel branch or ref to build (default: main)' required: false default: 'main' toolchain_url: description: 'Optional URL to a prebuilt toolchain tarball (tar.gz)' required: false default: '' compiler: description: 'Choose compiler: clang or gcc (default: clang)' required: false default: 'clang' defconfig: description: 'Defconfig name for aston (example: aston_defconfig). If empty, will try "defconfig" fallback.' required: false default: ''
+
+jobs: build: name: Build aston kernel runs-on: ubuntu-latest env: KERNEL_REPO: gaurav-paul9/kernel_oneplus_aston_sm8550 ARCH: arm64 O: out steps: - name: Checkout workflow repo uses: actions/checkout@v4 with: # Checkout this repo (if you keep workflow here). We will also fetch the kernel repo separately. fetch-depth: 0
+
+- name: Checkout kernel (aston) from user repo
+    uses: actions/checkout@v4
+    with:
+      repository: ${{ env.KERNEL_REPO }}
+      path: kernel
+      ref: ${{ github.event.inputs.kernel_branch }}
+      fetch-depth: 0
+
+  - name: Setup dependencies
+    run: |
+      sudo apt-get update
+      sudo apt-get install -y --no-install-recommends \
+        bc build-essential libncurses-dev bison flex libssl-dev libelf-dev ccache wget curl git python3 python3-distutils gcc-aarch64-linux-gnu pkg-config
+      mkdir -p ${HOME}/.ccache
+
+  - name: Install toolchain (optional) and export PATH
+    run: |
+      set -e
+      if [ "${{ github.event.inputs.toolchain_url }}" != "" ]; then
+        echo "Downloading toolchain from provided URL"
+        curl -L "${{ github.event.inputs.toolchain_url }}" -o /tmp/toolchain.tar.gz
+        sudo tar -xzf /tmp/toolchain.tar.gz -C /opt
+        # assume tarball extracts into /opt/toolchain or similar; add all bin/* to PATH
+        for d in /opt/*; do if [ -d "$d/bin" ]; then echo "$d/bin" >> /tmp/toolchain_bins; fi; done
+        if [ -f /tmp/toolchain_bins ]; then
+          export PATH=$(cat /tmp/toolchain_bins | tr '\n' ':'):$PATH
+          echo "PATH=$PATH" >> $GITHUB_ENV
+        fi
+      else
+        echo "No external toolchain URL given. Will use system clang/gcc where appropriate."
+      fi
+
+  - name: Install Clang (if requested)
+    if: ${{ github.event.inputs.compiler == 'clang' }}
+    run: |
+      sudo apt-get install -y clang lld
+      echo "clang installed"
+
+  - name: Print compiler info
+    run: |
+      echo "Compiler choice: ${{ github.event.inputs.compiler }}"
+      clang --version || true
+      aarch64-linux-gnu-gcc --version || true
+
+  - name: Configure build (defconfig)
+    working-directory: kernel
+    run: |
+      set -e
+      export ARCH=${{ env.ARCH }}
+      export O=${{ env.O }}
+
+      if [ "${{ github.event.inputs.defconfig }}" != "" ]; then
+        echo "Using defconfig: ${{ github.event.inputs.defconfig }}"
+        make O=$O ARCH=$ARCH ${{ github.event.inputs.defconfig }}
+      else
+        echo "No defconfig specified — attempting common defconfig fallbacks"
+        if make O=$O ARCH=$ARCH aston_defconfig; then exit 0; fi
+        if make O=$O ARCH=$ARCH vendor/defconfig; then exit 0; fi
+        if make O=$O ARCH=$ARCH defconfig; then exit 0; fi
+        echo "No known defconfig found. Listing kernel configs for debugging:";
+        ls -la
+        exit 1
+      fi
+
+  - name: Build kernel
+    working-directory: kernel
+    run: |
+      set -e
+      export ARCH=${{ env.ARCH }}
+      export O=${{ env.O }}
+
+      # Setup compiler flags depending on selection
+      if [ "${{ github.event.inputs.compiler }}" = "clang" ]; then
+        # use clang with lld if available
+        export CLANG_TRIPLE=aarch64-linux-gnu-
+        export CC=clang
+        export LD=ld.lld
+        export HOSTCC=gcc
+        echo "Building with clang"
+        make -j$(nproc) O=$O ARCH=$ARCH CC=clang CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee build.log
+      else
+        echo "Building with cross gcc"
+        make -j$(nproc) O=$O ARCH=$ARCH CROSS_COMPILE=aarch64-linux-gnu- 2>&1 | tee build.log
+      fi
+
+  - name: Build modules and install
+    working-directory: kernel
+    run: |
+      set -e
+      export ARCH=${{ env.ARCH }}
+      export O=${{ env.O }}
+      make O=$O ARCH=$ARCH modules_install INSTALL_MOD_PATH=$PWD/${O}/modules
+
+  - name: Collect build artifacts
+    working-directory: kernel
+    run: |
+      set -e
+      ARTDIR=$PWD/../artifacts
+      mkdir -p "$ARTDIR"
+
+      # Kernel image candidates (search common locations)
+      find $O -type f -name "Image*" -o -name "bzImage" -o -name "Image.gz-dtb" -o -name "zImage" -o -path "*/arch/arm64/boot/Image*" | sed -n '1,200p' > /tmp/images.txt || true
+      echo "---- images found ----"
+      cat /tmp/images.txt || true
+
+      # copy images
+      if [ -s /tmp/images.txt ]; then
+        while read -r f; do cp -v "$f" "$ARTDIR/" || true; done < /tmp/images.txt
+      fi
+
+      # dtb
+      if [ -d $O/arch/arm64/boot/dts ]; then
+        find $O/arch/arm64/boot/dts -type f -name "*.dtb" -exec cp -v {} "$ARTDIR/" \; || true
+      fi
+
+      # modules and logs
+      if [ -d $O/modules ]; then
+        tar -C $O -czf "$ARTDIR/modules.tar.gz" modules || true
+      fi
+
+      cp -v build.log "$ARTDIR/" || true
+
+  - name: Upload artifacts
+    uses: actions/upload-artifact@v4
+    with:
+      name: aston-kernel-artifacts-${{ github.sha }}
+      path: artifacts
+
+  - name: Show artifact list
+    run: |
+      ls -la artifacts || true# This is a basic workflow to help you get started with Actions
+
+name: CI
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4
+
+      # Runs a single command using the runners shell
+      - name: Run a one-line script
+        run: echo Hello, world!
+
+      # Runs a set of commands using the runners shell
+      - name: Run a multi-line script
+        run: |
+          echo Add other actions to build,
+          echo test, and deploy your project.
