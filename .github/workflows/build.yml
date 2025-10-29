@@ -5,20 +5,17 @@ on:
 
 jobs:
   build:
-    name: Building Kernel For Aston
+    name: Building Khaenriah Kernel for RMX1971
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-
-      env:
+    env:
       TZ: Africa/Cairo
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_MAXSIZE: "2G"
       CCACHE_HARDLINK: "true"
       KERNEL_DEFCONFIG: defconfig
-      ANYKERNEL_REPO: https://github.com/dain09/AnyKernel3
-      ANYKERNEL_BRANCH: ksun
 
     steps:
     - name: Checkout Repository
