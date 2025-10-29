@@ -9,7 +9,6 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-      
 - name: Checkout kernel (aston) from user repo
     uses: actions/checkout@v4
     with:
