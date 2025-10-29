@@ -1,0 +1,87 @@
+name: AxionOS_Kernel_CI-aston
+
+on:
+  workflow_dispatch:
+
+jobs:
+  LineageOS_Kernel_CI:
+    name: AxionOS Kernel CI
+    runs-on: self-hosted
+    steps:
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+
+    - name: Clone Kernel and Dependencies
+      run: |
+        sudo apt update
+
+        sudo apt install git bc bison flex build-essential zip curl libncurses5-dev libssl-dev python3 -y
+
+        mkdir -p ~/android/kernel
+
+        cd ~/android/kernel
+
+        git clone https://github.com/gaurav-paul9/android_kernel_oneplus_sm8550.git -b newroot kernel_src --depth=1
+
+        cd kernel_src
+
+        mkdir -p ~/android/toolchains
+
+        cd ~/android/toolchains
+
+        git clone https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 clang-prebuilt --depth=1
+
+        cd ~/android/kernel/kernel_src
+
+        export KERNEL_DIR=$(pwd)
+
+        export ARCH=arm64
+
+
+        export OUT=$KERNEL_DIR/out
+
+        export CLANG_PATH=~/android/toolchains/clang-prebuilt/clang-r*/bin
+
+        export PATH=$CLANG_PATH:$PATH
+
+        export KBUILD_BUILD_USER="gaurav"
+
+        export KBUILD_BUILD_HOST="axion"
+
+        mkdir -p $OUT
+
+        export CC=clang
+
+        export CROSS_COMPILE=aarch64-linux-gnu-
+
+        export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+        ls arch/arm64/configs | grep defconfig
+
+        make O=$OUT ARCH=arm64 vendor/oneplus12r_defconfig
+
+        make -j$(nproc) O=$OUT ARCH=arm64 CC=clang
+
+        cd ~/android/kernel
+
+        git clone https://github.com/osm0sis/AnyKernel3.git
+
+        cp $OUT/arch/arm64/boot/Image.gz-dtb AnyKernel3/zImage
+
+        cd AnyKernel3
+
+        kernel.string=AxionKernel v1.0 by Gaurav
+
+        device.name1=aston
+
+        zip -r9 ../AxionKernel-$(date +%Y%m%d).zip * -x .git* README.md *placeholder
+
+
+
+
+
+
+
