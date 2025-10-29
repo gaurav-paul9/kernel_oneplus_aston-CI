@@ -4,11 +4,23 @@ on:
   workflow_dispatch:
 
 jobs:
-  LineageOS_Kernel_CI:
-    name: AxionOS Kernel CI
-    runs-on: self-hosted
-    steps:
+  build:
+    name: Building Kernel For Aston
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
 
+      env:
+      TZ: Africa/Cairo
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_HARDLINK: "true"
+      KERNEL_DEFCONFIG: defconfig
+      ANYKERNEL_REPO: https://github.com/dain09/AnyKernel3
+      ANYKERNEL_BRANCH: ksun
+
+    steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
       with:
@@ -49,7 +61,7 @@ jobs:
 
         export KBUILD_BUILD_USER="gaurav"
 
-        export KBUILD_BUILD_HOST="axion"
+        export KBUILD_BUILD_HOST="ubuntu"
 
         mkdir -p $OUT
 
